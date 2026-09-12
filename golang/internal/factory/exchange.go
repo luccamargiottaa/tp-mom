@@ -1,33 +1,57 @@
 package factory
 
-import m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
+import (
+	"errors"
+
+	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
+	amqp "github.com/rabbitmq/amqp091-go"
+)
 
 type MessageMiddlewareExchangeRabbitMQ struct {
-	exchange           string
-	keys               []string
-	connectionSettings m.ConnSettings
+	exchange   string
+	keys       []string
+	connection *amqp.Connection
+	channel    *amqp.Channel
 }
 
-func NewExchangeMiddleware(exchange string, keys []string, connectionSettings m.ConnSettings) MessageMiddlewareExchangeRabbitMQ {
-	return MessageMiddlewareExchangeRabbitMQ{
+func NewMiddlewareExchange(exchange string, keys []string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareExchangeRabbitMQ, error) {
+	err := channel.ExchangeDeclare(
+		exchange,
+		"direct",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		declareErr := ErrMessageMiddlewareDeclare
+		closeErr := closeConnection(connection, channel)
+		err = errors.Join(declareErr, closeErr)
+
+		return nil, err
+	}
+	middlewareExchange := MessageMiddlewareExchangeRabbitMQ{
 		exchange,
 		keys,
-		connectionSettings,
+		connection,
+		channel,
 	}
+	return &middlewareExchange, nil
 }
 
-func (exchange MessageMiddlewareExchangeRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
+func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
 	return nil
 }
 
-func (exchange MessageMiddlewareExchangeRabbitMQ) StopConsuming() error {
+func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) StopConsuming() error {
 	return nil
 }
 
-func (exchange MessageMiddlewareExchangeRabbitMQ) Send(msg m.Message) error {
+func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) Send(msg m.Message) error {
 	return nil
 }
 
-func (exchange MessageMiddlewareExchangeRabbitMQ) Close() error {
+func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) Close() error {
 	return nil
 }

@@ -1,31 +1,54 @@
 package factory
 
-import m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
+import (
+	"errors"
+
+	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
+	amqp "github.com/rabbitmq/amqp091-go"
+)
 
 type MessageMiddlewareQueueRabbitMQ struct {
-	queueName          string
-	connectionSettings m.ConnSettings
+	connection *amqp.Connection
+	channel    *amqp.Channel
+	queue      amqp.Queue
 }
 
-func NewQueueMiddleware(queueName string, connectionSettings m.ConnSettings) MessageMiddlewareQueueRabbitMQ {
-	return MessageMiddlewareQueueRabbitMQ{
+func NewMiddlewareQueue(queueName string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareQueueRabbitMQ, error) {
+	queue, err := channel.QueueDeclare(
 		queueName,
-		connectionSettings,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		declareErr := ErrMessageMiddlewareDeclare
+		closeErr := closeConnection(connection, channel)
+		err = errors.Join(declareErr, closeErr)
+
+		return nil, err
 	}
+	middlewareQueue := MessageMiddlewareQueueRabbitMQ{
+		connection,
+		channel,
+		queue,
+	}
+	return &middlewareQueue, nil
 }
 
-func (queue MessageMiddlewareQueueRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
+func (middlewareQueue MessageMiddlewareQueueRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
 	return nil
 }
 
-func (queue MessageMiddlewareQueueRabbitMQ) StopConsuming() error {
+func (middlewareQueue MessageMiddlewareQueueRabbitMQ) StopConsuming() error {
 	return nil
 }
 
-func (queue MessageMiddlewareQueueRabbitMQ) Send(msg m.Message) error {
+func (middlewareQueue MessageMiddlewareQueueRabbitMQ) Send(msg m.Message) error {
 	return nil
 }
 
-func (queue MessageMiddlewareQueueRabbitMQ) Close() error {
+func (middlewareQueue MessageMiddlewareQueueRabbitMQ) Close() error {
 	return nil
 }
