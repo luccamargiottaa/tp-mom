@@ -1,6 +1,8 @@
 package factory
 
 import (
+	"sync/atomic"
+
 	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -10,6 +12,7 @@ type MessageMiddlewareExchangeRabbitMQ struct {
 	keys       []string
 	connection *amqp.Connection
 	channel    *amqp.Channel
+	consuming  atomic.Bool
 }
 
 func NewMiddlewareExchange(exchange string, keys []string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareExchangeRabbitMQ, error) {
@@ -26,26 +29,72 @@ func NewMiddlewareExchange(exchange string, keys []string, connection *amqp.Conn
 		return nil, handleError(err, connection)
 	}
 	middlewareExchange := MessageMiddlewareExchangeRabbitMQ{
-		exchange,
-		keys,
-		connection,
-		channel,
+		exchange:   exchange,
+		keys:       keys,
+		connection: connection,
+		channel:    channel,
 	}
 	return &middlewareExchange, nil
 }
 
-func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
+func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
+	queue, err := declareQueue(middlewareExchange.channel, "", false, true)
+
+	if err != nil {
+		return handleError(err, middlewareExchange.connection)
+	}
+	for _, key := range middlewareExchange.keys {
+		err = middlewareExchange.channel.QueueBind(
+			queue.Name,
+			key,
+			middlewareExchange.exchange,
+			false,
+			nil,
+		)
+		if err != nil {
+			return handleError(err, middlewareExchange.connection)
+		}
+	}
+	middlewareExchange.consuming.Store(true)
+	deliveries, err := getConsumeChannel(middlewareExchange.channel, queue.Name, middlewareExchange.exchange)
+
+	if err != nil {
+		return handleError(err, middlewareExchange.connection)
+	}
+	consumeDeliveries(deliveries, callbackFunc)
+
+	if middlewareExchange.consuming.Load() {
+		return m.ErrMessageMiddlewareDisconnected
+	}
 	return nil
 }
 
-func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) StopConsuming() error {
+func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) StopConsuming() error {
+	if !middlewareExchange.consuming.Load() {
+		return nil
+	}
+	middlewareExchange.consuming.Store(false)
+	err := stopConsuming(middlewareExchange.channel, middlewareExchange.exchange)
+
+	if err != nil {
+		return handleError(err, middlewareExchange.connection)
+	}
 	return nil
 }
 
-func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) Send(msg m.Message) error {
+func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) Send(msg m.Message) error {
+	publishing := createPublishing(msg)
+
+	for _, key := range middlewareExchange.keys {
+		err := publish(middlewareExchange.channel, middlewareExchange.exchange, key, publishing)
+
+		if err != nil {
+			return handleError(err, middlewareExchange.connection)
+		}
+	}
 	return nil
 }
 
-func (middlewareExchange MessageMiddlewareExchangeRabbitMQ) Close() error {
-	return nil
+func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) Close() error {
+	return closeChannelAndConnection(middlewareExchange.connection, middlewareExchange.channel)
 }

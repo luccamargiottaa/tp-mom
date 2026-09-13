@@ -17,23 +17,9 @@ type MessageMiddlewareQueueRabbitMQ struct {
 	consuming  atomic.Bool
 }
 
-func ack(delivery amqp.Delivery) {
-	_ = delivery.Ack(false)
-}
-
-func nack(delivery amqp.Delivery) {
-	_ = delivery.Nack(false, true)
-}
-
 func NewMiddlewareQueue(queueName string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareQueueRabbitMQ, error) {
-	queue, err := channel.QueueDeclare(
-		queueName,
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
+	queue, err := declareQueue(channel, queueName, true, false)
+
 	if err != nil {
 		return nil, handleError(err, connection)
 	}
@@ -50,30 +36,14 @@ func NewMiddlewareQueue(queueName string, connection *amqp.Connection, channel *
 }
 
 func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
-	deliveries, err := middlewareQueue.channel.Consume(
-		middlewareQueue.queueName,
-		middlewareQueue.queueName,
-		false,
-		false,
-		false,
-		false,
-		nil,
-	)
+	middlewareQueue.consuming.Store(true)
+	deliveries, err := getConsumeChannel(middlewareQueue.channel, middlewareQueue.queueName, middlewareQueue.queueName)
+
 	if err != nil {
 		return handleError(err, middlewareQueue.connection)
 	}
-	middlewareQueue.consuming.Store(true)
+	consumeDeliveries(deliveries, callbackFunc)
 
-	for delivery := range deliveries {
-		message := m.Message{
-			Body: string(delivery.Body),
-		}
-		callbackFunc(
-			message,
-			func() { ack(delivery) },
-			func() { nack(delivery) },
-		)
-	}
 	if middlewareQueue.consuming.Load() {
 		return m.ErrMessageMiddlewareDisconnected
 	}
@@ -85,7 +55,7 @@ func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) StopConsuming() error {
 		return nil
 	}
 	middlewareQueue.consuming.Store(false)
-	err := middlewareQueue.channel.Cancel(middlewareQueue.queueName, false)
+	err := stopConsuming(middlewareQueue.channel, middlewareQueue.queueName)
 
 	if err != nil {
 		return handleError(err, middlewareQueue.connection)
@@ -94,18 +64,10 @@ func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) StopConsuming() error {
 }
 
 func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) Send(msg m.Message) error {
-	sentMessage := amqp.Publishing{
-		ContentType:  "text/plain",
-		DeliveryMode: amqp.Persistent,
-		Body:         []byte(msg.Body),
-	}
-	err := middlewareQueue.channel.Publish(
-		"",
-		middlewareQueue.queueName,
-		false,
-		false,
-		sentMessage,
-	)
+	publishing := createPublishing(msg)
+
+	err := publish(middlewareQueue.channel, "", middlewareQueue.queueName, publishing)
+
 	if err != nil {
 		return handleError(err, middlewareQueue.connection)
 	}
@@ -113,11 +75,5 @@ func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) Send(msg m.Message) error
 }
 
 func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) Close() error {
-	channelErr := middlewareQueue.channel.Close()
-	connectionErr := closeConnection(middlewareQueue.connection)
-
-	if channelErr != nil || connectionErr != nil {
-		return m.ErrMessageMiddlewareClose
-	}
-	return nil
+	return closeChannelAndConnection(middlewareQueue.connection, middlewareQueue.channel)
 }
