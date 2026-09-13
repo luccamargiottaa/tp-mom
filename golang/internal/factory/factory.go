@@ -18,20 +18,26 @@ func connect(connectionSettings m.ConnSettings) (*amqp.Connection, *amqp.Channel
 	channel, err := connection.Channel()
 
 	if err != nil {
-		if errors.Is(err, amqp.ErrClosed) {
-			return nil, nil, m.ErrMessageMiddlewareDisconnected
-		}
-		if err = closeConnection(connection); err != nil {
-			return nil, nil, err
-		}
-		return nil, nil, m.ErrMessageMiddlewareMessage
+		return nil, nil, handleError(err, connection)
 	}
 	return connection, channel, nil
 }
 
+func handleError(err error, connection *amqp.Connection) error {
+	if err = closeConnection(connection); err != nil {
+		return err
+	}
+	if errors.Is(err, amqp.ErrClosed) {
+		return m.ErrMessageMiddlewareDisconnected
+	}
+	return m.ErrMessageMiddlewareMessage
+}
+
 func closeConnection(connection *amqp.Connection) error {
-	if err := connection.Close(); err != nil {
-		return m.ErrMessageMiddlewareClose
+	if !connection.IsClosed() {
+		if err := connection.Close(); err != nil {
+			return m.ErrMessageMiddlewareClose
+		}
 	}
 	return nil
 }

@@ -1,8 +1,6 @@
 package factory
 
 import (
-	"errors"
-
 	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -24,13 +22,7 @@ func NewMiddlewareQueue(queueName string, connection *amqp.Connection, channel *
 		nil,
 	)
 	if err != nil {
-		if err = closeConnection(connection); err != nil {
-			return nil, err
-		}
-		if errors.Is(err, amqp.ErrClosed) {
-			return nil, m.ErrMessageMiddlewareDisconnected
-		}
-		return nil, m.ErrMessageMiddlewareMessage
+		return nil, handleError(err, connection)
 	}
 	middlewareQueue := MessageMiddlewareQueueRabbitMQ{
 		queueName,
