@@ -8,39 +8,29 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-var (
-	ErrMessageMiddlewareConnect = errors.New("message middleware: connect error")
-	ErrMessageMiddlewareDeclare = errors.New("message middleware: declare error")
-)
-
 func connect(connectionSettings m.ConnSettings) (*amqp.Connection, *amqp.Channel, error) {
 	url := fmt.Sprintf("%s:%d", connectionSettings.Hostname, connectionSettings.Port)
 	connection, err := amqp.Dial(url)
 
 	if err != nil {
-		return nil, nil, ErrMessageMiddlewareConnect
+		return nil, nil, m.ErrMessageMiddlewareDisconnected
 	}
 	channel, err := connection.Channel()
 
 	if err != nil {
-		chErr := ErrMessageMiddlewareConnect
-		closeErr := connection.Close()
-
-		if closeErr != nil {
-			closeErr = m.ErrMessageMiddlewareClose
+		if errors.Is(err, amqp.ErrClosed) {
+			return nil, nil, m.ErrMessageMiddlewareDisconnected
 		}
-		err = errors.Join(chErr, closeErr)
-
-		return nil, nil, err
+		if err = closeConnection(connection); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, m.ErrMessageMiddlewareMessage
 	}
 	return connection, channel, nil
 }
 
-func closeConnection(connection *amqp.Connection, channel *amqp.Channel) error {
-	chErr := channel.Close()
-	closeErr := connection.Close()
-
-	if chErr != nil || closeErr != nil {
+func closeConnection(connection *amqp.Connection) error {
+	if err := connection.Close(); err != nil {
 		return m.ErrMessageMiddlewareClose
 	}
 	return nil

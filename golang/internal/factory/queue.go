@@ -8,6 +8,7 @@ import (
 )
 
 type MessageMiddlewareQueueRabbitMQ struct {
+	queueName  string
 	connection *amqp.Connection
 	channel    *amqp.Channel
 	queue      amqp.Queue
@@ -23,13 +24,16 @@ func NewMiddlewareQueue(queueName string, connection *amqp.Connection, channel *
 		nil,
 	)
 	if err != nil {
-		declareErr := ErrMessageMiddlewareDeclare
-		closeErr := closeConnection(connection, channel)
-		err = errors.Join(declareErr, closeErr)
-
-		return nil, err
+		if err = closeConnection(connection); err != nil {
+			return nil, err
+		}
+		if errors.Is(err, amqp.ErrClosed) {
+			return nil, m.ErrMessageMiddlewareDisconnected
+		}
+		return nil, m.ErrMessageMiddlewareMessage
 	}
 	middlewareQueue := MessageMiddlewareQueueRabbitMQ{
+		queueName,
 		connection,
 		channel,
 		queue,

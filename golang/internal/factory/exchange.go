@@ -25,11 +25,13 @@ func NewMiddlewareExchange(exchange string, keys []string, connection *amqp.Conn
 		nil,
 	)
 	if err != nil {
-		declareErr := ErrMessageMiddlewareDeclare
-		closeErr := closeConnection(connection, channel)
-		err = errors.Join(declareErr, closeErr)
-
-		return nil, err
+		if err = closeConnection(connection); err != nil {
+			return nil, err
+		}
+		if errors.Is(err, amqp.ErrClosed) {
+			return nil, m.ErrMessageMiddlewareDisconnected
+		}
+		return nil, m.ErrMessageMiddlewareMessage
 	}
 	middlewareExchange := MessageMiddlewareExchangeRabbitMQ{
 		exchange,
