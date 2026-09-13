@@ -9,7 +9,7 @@ import (
 )
 
 func connect(connectionSettings m.ConnSettings) (*amqp.Connection, *amqp.Channel, error) {
-	url := fmt.Sprintf("%s:%d", connectionSettings.Hostname, connectionSettings.Port)
+	url := fmt.Sprintf("amqp://guest:guest@%s:%d/", connectionSettings.Hostname, connectionSettings.Port)
 	connection, err := amqp.Dial(url)
 
 	if err != nil {
@@ -24,9 +24,8 @@ func connect(connectionSettings m.ConnSettings) (*amqp.Connection, *amqp.Channel
 }
 
 func handleError(err error, connection *amqp.Connection) error {
-	if err = closeConnection(connection); err != nil {
-		return err
-	}
+	_ = closeConnection(connection)
+
 	if errors.Is(err, amqp.ErrClosed) {
 		return m.ErrMessageMiddlewareDisconnected
 	}
