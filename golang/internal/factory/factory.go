@@ -41,20 +41,6 @@ func closeConnection(connection *amqp.Connection) error {
 	return nil
 }
 
-func closeChannel(channel *amqp.Channel) error {
-	if err := channel.Close(); err != nil {
-		return m.ErrMessageMiddlewareClose
-	}
-	return nil
-}
-
-func closeChannelAndConnection(connection *amqp.Connection, channel *amqp.Channel) error {
-	channelErr := closeChannel(channel)
-	connectionErr := closeConnection(connection)
-
-	return errors.Join(channelErr, connectionErr)
-}
-
 func declareQueue(channel *amqp.Channel, queueName string, durable bool, exclusive bool) (amqp.Queue, error) {
 	return channel.QueueDeclare(
 		queueName,
@@ -127,7 +113,7 @@ func CreateQueueMiddleware(queueName string, connectionSettings m.ConnSettings) 
 	if err != nil {
 		return nil, err
 	}
-	return NewMiddlewareQueue(queueName, connection, channel)
+	return newMiddlewareQueue(queueName, connection, channel)
 }
 
 func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings m.ConnSettings) (m.Middleware, error) {
@@ -136,5 +122,5 @@ func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings
 	if err != nil {
 		return nil, err
 	}
-	return NewMiddlewareExchange(exchange, keys, connection, channel)
+	return newMiddlewareExchange(exchange, keys, connection, channel)
 }

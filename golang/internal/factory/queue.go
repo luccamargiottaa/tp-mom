@@ -1,8 +1,6 @@
 package factory
 
 import (
-	"sync/atomic"
-
 	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -14,10 +12,10 @@ type MessageMiddlewareQueueRabbitMQ struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 	queue      amqp.Queue
-	consuming  atomic.Bool
+	consuming  bool
 }
 
-func NewMiddlewareQueue(queueName string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareQueueRabbitMQ, error) {
+func newMiddlewareQueue(queueName string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareQueueRabbitMQ, error) {
 	queue, err := declareQueue(channel, queueName, true, false)
 
 	if err != nil {
@@ -36,7 +34,7 @@ func NewMiddlewareQueue(queueName string, connection *amqp.Connection, channel *
 }
 
 func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) StartConsuming(callbackFunc func(msg m.Message, ack func(), nack func())) error {
-	middlewareQueue.consuming.Store(true)
+	middlewareQueue.consuming = true
 	deliveries, err := getConsumeChannel(middlewareQueue.channel, middlewareQueue.queueName, middlewareQueue.queueName)
 
 	if err != nil {
@@ -44,17 +42,17 @@ func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) StartConsuming(callbackFu
 	}
 	consumeDeliveries(deliveries, callbackFunc)
 
-	if middlewareQueue.consuming.Load() {
+	if middlewareQueue.consuming {
 		return m.ErrMessageMiddlewareDisconnected
 	}
 	return nil
 }
 
 func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) StopConsuming() error {
-	if !middlewareQueue.consuming.Load() {
+	if !middlewareQueue.consuming {
 		return nil
 	}
-	middlewareQueue.consuming.Store(false)
+	middlewareQueue.consuming = false
 	err := stopConsuming(middlewareQueue.channel, middlewareQueue.queueName)
 
 	if err != nil {
@@ -75,5 +73,5 @@ func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) Send(msg m.Message) error
 }
 
 func (middlewareQueue *MessageMiddlewareQueueRabbitMQ) Close() error {
-	return closeChannelAndConnection(middlewareQueue.connection, middlewareQueue.channel)
+	return closeConnection(middlewareQueue.connection)
 }

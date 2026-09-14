@@ -1,8 +1,6 @@
 package factory
 
 import (
-	"sync/atomic"
-
 	m "github.com/7574-sistemas-distribuidos/tp-mom/golang/internal/middleware"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -12,10 +10,10 @@ type MessageMiddlewareExchangeRabbitMQ struct {
 	keys       []string
 	connection *amqp.Connection
 	channel    *amqp.Channel
-	consuming  atomic.Bool
+	consuming  bool
 }
 
-func NewMiddlewareExchange(exchange string, keys []string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareExchangeRabbitMQ, error) {
+func newMiddlewareExchange(exchange string, keys []string, connection *amqp.Connection, channel *amqp.Channel) (*MessageMiddlewareExchangeRabbitMQ, error) {
 	err := channel.ExchangeDeclare(
 		exchange,
 		"direct",
@@ -55,7 +53,7 @@ func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) StartConsuming(call
 			return handleError(err, middlewareExchange.connection)
 		}
 	}
-	middlewareExchange.consuming.Store(true)
+	middlewareExchange.consuming = true
 	deliveries, err := getConsumeChannel(middlewareExchange.channel, queue.Name, middlewareExchange.exchange)
 
 	if err != nil {
@@ -63,17 +61,17 @@ func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) StartConsuming(call
 	}
 	consumeDeliveries(deliveries, callbackFunc)
 
-	if middlewareExchange.consuming.Load() {
+	if middlewareExchange.consuming {
 		return m.ErrMessageMiddlewareDisconnected
 	}
 	return nil
 }
 
 func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) StopConsuming() error {
-	if !middlewareExchange.consuming.Load() {
+	if !middlewareExchange.consuming {
 		return nil
 	}
-	middlewareExchange.consuming.Store(false)
+	middlewareExchange.consuming = false
 	err := stopConsuming(middlewareExchange.channel, middlewareExchange.exchange)
 
 	if err != nil {
@@ -96,5 +94,5 @@ func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) Send(msg m.Message)
 }
 
 func (middlewareExchange *MessageMiddlewareExchangeRabbitMQ) Close() error {
-	return closeChannelAndConnection(middlewareExchange.connection, middlewareExchange.channel)
+	return closeConnection(middlewareExchange.connection)
 }
